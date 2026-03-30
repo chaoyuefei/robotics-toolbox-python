@@ -44,6 +44,43 @@ Collision checking requires PyBullet, which may not build on all platforms:
 uv pip install pybullet
 ```
 
+## Installing from GitHub in Another Project
+
+Install directly from the GitHub repo:
+
+```bash
+# SSH
+uv pip install "roboticstoolbox-python @ git+ssh://git@github.com/chaoyuefei/robotics-toolbox-python.git"
+
+# HTTPS
+uv pip install "roboticstoolbox-python @ git+https://github.com/chaoyuefei/robotics-toolbox-python.git"
+```
+
+Pin a specific branch or commit:
+
+```bash
+# branch
+uv pip install "roboticstoolbox-python @ git+ssh://git@github.com/chaoyuefei/robotics-toolbox-python.git@master"
+
+# commit
+uv pip install "roboticstoolbox-python @ git+ssh://git@github.com/chaoyuefei/robotics-toolbox-python.git@87cb2f75"
+```
+
+You'll still need `--no-build-isolation` since it has C extensions:
+
+```bash
+uv pip install setuptools numpy
+uv pip install "roboticstoolbox-python @ git+ssh://git@github.com/chaoyuefei/robotics-toolbox-python.git" --no-build-isolation
+```
+
+If your other project uses `pyproject.toml`, add it to dependencies:
+
+```toml
+dependencies = [
+    "roboticstoolbox-python @ git+ssh://git@github.com/chaoyuefei/robotics-toolbox-python.git@master",
+]
+```
+
 ## Running Tests
 
 Always use the venv Python to avoid picking up system Python:
