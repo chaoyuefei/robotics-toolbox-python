@@ -20,7 +20,6 @@ dependencies = [
     "matplotlib",
     "ansitable",
     "swift-sim @ git+ssh://git@github.com/chaoyuefei/swift.git@master",
-    "websockets<14",
     "rtb-data",
     "progress",
     "typing_extensions",
@@ -199,4 +198,3 @@ archs = ["AMD64", "x86"]
 
 [tool.coverage.run]
 omit = ["roboticstoolbox/examples/*", "test_*.py"]
-
