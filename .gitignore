@@ -1,5 +1,6 @@
 .DS_Store
 
+uv.lock
 example
 .pyodide*/**
 *.doctree
