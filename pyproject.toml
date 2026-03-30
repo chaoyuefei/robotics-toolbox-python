@@ -198,3 +198,4 @@ archs = ["AMD64", "x86"]
 
 [tool.coverage.run]
 omit = ["roboticstoolbox/examples/*", "test_*.py"]
+
