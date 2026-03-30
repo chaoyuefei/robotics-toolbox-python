@@ -88,7 +88,7 @@ provide support for data types such as SO(n) and SE(n) matrices, quaternions, tw
 
 ## Getting going
 
-You will need Python >= 3.6
+You will need Python >= 3.9
 
 ### Using pip
 
@@ -111,6 +111,12 @@ pip3 install roboticstoolbox-python[optionlist]
 [Swift](https://github.com/jhavl/swift), a web-based visualizer, is
 installed as part of Robotics Toolbox.
 
+### Using uv
+
+```shell script
+uv pip install roboticstoolbox-python
+```
+
 ### From GitHub
 
 To install the bleeding-edge version from GitHub
@@ -120,6 +126,10 @@ git clone https://github.com/petercorke/robotics-toolbox-python.git
 cd robotics-toolbox-python
 pip3 install -e .
 ```
+
+### Development Setup
+
+For development with [uv](https://docs.astral.sh/uv/), see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 <br>
 
