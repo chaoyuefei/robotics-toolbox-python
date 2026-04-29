@@ -19,7 +19,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "ansitable",
-    "swift-sim @ git+ssh://git@github.com/chaoyuefei/swift.git@master>=1.1.1",
+    "swift-sim @ git+ssh://git@github.com/chaoyuefei/swift.git@master",
     "rtb-data>=1.1.1",
     "progress",
     "typing_extensions",
