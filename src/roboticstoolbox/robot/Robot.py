@@ -1760,8 +1760,6 @@ class Robot(BaseRobot[Link], RobotKinematicsMixin):
         v = SpatialVelocity.Alloc(n)
         a = SpatialAcceleration.Alloc(n)
         f = SpatialForce.Alloc(n)
-        I = SpatialInertia.Alloc(n)  # noqa
-        s = []  # joint motion subspace
 
         # Handle trajectory case
         q = getmatrix(q, (None, None))
@@ -1774,128 +1772,101 @@ class Robot(BaseRobot[Link], RobotKinematicsMixin):
         else:
             Q = np.empty((l, n))  # joint torque/force
 
-        link_groups: List[List[int]] = []
+        joint_links = [None] * n
+        parent_joint_index = [None] * n
+        joint_subspaces = [None] * n
 
-        # Group links together based on whether they are joints or not
-        # Static links are grouped with the first joint encountered
-        current_group = []
-        for i, link in enumerate(self.links):
-            current_group.append(i)
+        for link in self.links:
+            if not link.isjoint:
+                continue
 
-            # Break after adding the first link
-            if link.isjoint:
-                link_groups.append(current_group)
-                current_group = []
+            j = link.jindex
+            if j is None:  # pragma nocover
+                continue
 
-        # Make some intermediate variables
-        for i, group in enumerate(link_groups):
-            I_int = SpatialInertia()
+            joint_links[j] = link
+            joint_subspaces[j] = None if link.v is None else link.v.s
 
-            for idx in group:
-                link = self.links[idx]
-
-                I_int = I_int + SpatialInertia(m=link.m, r=link.r)
-
-                if link.v is not None:
-                    s.append(link.v.s)
-
-            I[i] = I_int
-
-        if gravity is None:
-            a_grav = -SpatialAcceleration(self.gravity)
-        else:  # pragma nocover
-            a_grav = -SpatialAcceleration(gravity)
-
-        # For the following, v, a, f, I, s, Xup are all lists of length n
-        # where the indices correspond to the index of the group within
-        # link_groups
-        # As always, q, qd, qdd are lists of length n, where indices correspond
-        # to the jindex of the joint, which will be the last link in the group
-        # within link_groups
+            parent = link.parent
+            while parent is not None and parent.jindex is None:
+                parent = parent.parent
+            parent_joint_index[j] = None if parent is None else parent.jindex
 
         for k in range(l):
             qk = q[k, :]
             qdk = qd[k, :]
             qddk = qdd[k, :]
 
-            # forward recursion
-            for j, group in enumerate(link_groups):
-                # The joint is the last link in the group
-                joint = self.links[group[-1]]
-                jindex = joint.jindex
+            # initialize inertias by folding any fixed-link dynamics into the
+            # nearest upstream jointed link
+            I = SpatialInertia.Alloc(n)  # noqa
+            for link in self.links:
+                owner = link
+                T_owner_link = SE3()
 
-                vJ = SpatialVelocity(s[j] * qdk[jindex])
+                while owner is not None and owner.jindex is None:
+                    T_owner_link = SE3(owner.A()) * T_owner_link
+                    owner = owner.parent
+
+                if owner is None or owner.jindex is None:
+                    continue
+
+                j = owner.jindex
+                R_owner_link = T_owner_link.R
+                r_owner = link.r if link is owner else T_owner_link * link.r
+                I_owner = link.I if link is owner else R_owner_link @ link.I @ R_owner_link.T
+
+                I.data[j] = (
+                    I[j].A + SpatialInertia(m=link.m, r=r_owner, I=I_owner).A
+                )
+
+            if gravity is None:
+                a_grav = -SpatialAcceleration(self.gravity)
+            else:  # pragma nocover
+                a_grav = -SpatialAcceleration(gravity)
+
+            # forward recursion
+            for j in range(0, n):
+                link = joint_links[j]
+                s = joint_subspaces[j]
+
+                if link is None or s is None:  # pragma nocover
+                    raise ValueError(
+                        f"joint index {j} not found in robot {self.name}"
+                    )
+
+                vJ = SpatialVelocity(s * qdk[j])
 
                 # transform from parent(j) to j
-                # Xup_int = SE3()
-                first_element = True
-                for idx in group:
-                    link = self.links[idx]
+                Xup[j] = SE3(link.A(qk[j])).inv()
 
-                    if link.isjoint and link.jindex is not None:
-                        if first_element:
-                            Xup_int = SE3(link.A(qk[link.jindex]))
-                            first_element = False
-                        else:
-                            Xup_int = Xup_int * SE3(link.A(qk[link.jindex]))
-                    else:
-                        if first_element:
-                            Xup_int = SE3(link.A())
-                            first_element = False
-                        else:
-                            Xup_int = Xup_int * SE3(link.A())
+                jp = parent_joint_index[j]
 
-                Xup[j] = Xup_int.inv()
-
-                # The first link in the group
-                first_link = self.links[group[0]]
-
-                if first_link.parent is None:
+                if jp is None:
                     v[j] = vJ
-                    a[j] = Xup[j] * a_grav + SpatialAcceleration(s[j] * qddk[jindex])
+                    a[j] = Xup[j] * a_grav + SpatialAcceleration(s * qddk[j])
                 else:
-                    # The index of `link`s parent within self.links
-                    parent_idx = self.links.index(first_link.parent)
-
-                    # The index of the group that the parent link is in
-                    group_idx = [
-                        i for i, group in enumerate(link_groups) if parent_idx in group
-                    ][0]
-
-                    v[j] = Xup[j] * v[group_idx] + vJ
+                    v[j] = Xup[j] * v[jp] + vJ
                     a[j] = (
-                        Xup[j] * a[group_idx]
-                        + SpatialAcceleration(s[j] * qddk[jindex])
-                        + v[j] @ vJ
+                        Xup[j] * a[jp] + SpatialAcceleration(s * qddk[j]) + v[j] @ vJ
                     )
 
                 f[j] = I[j] * a[j] + v[j] @ (I[j] * v[j])
 
-            # Backward recursion
-            for j in reversed(range(n)):
-                group = link_groups[j]
-                joint = self.links[group[-1]]
-                first_link = self.links[group[0]]
-                # link = self.links[j]
+            # backward recursion
+            for j in reversed(range(0, n)):
+                s = joint_subspaces[j]
+                if s is None:  # pragma nocover
+                    raise ValueError(
+                        f"joint subspace {j} not found in robot {self.name}"
+                    )
 
                 # next line could be dot(), but fails for symbolic arguments
-                Q[k, j] = sum(f[j].A * s[j])
+                Q[k, j] = sum(f[j].A * s)
 
-                if first_link.parent is not None:
-                    # The index of `link`s parent within self.links
-                    parent_idx = self.links.index(first_link.parent)
-
-                    # The index of the group that the parent link is in
-                    group_idx = [
-                        i for i, group in enumerate(link_groups) if parent_idx in group
-                    ][0]
-
-                    f[group_idx] = f[group_idx] + Xup[j] * f[j]
-
-        # The current Q has the length equal to the number of links within the robot
-        # rather than the number of joints. We need to remove the static links
-        # from the Q array
-        # joint_idx = [i for i, link in enumerate(self.links) if link.isjoint]
+                jp = parent_joint_index[j]
+                if jp is not None:
+                    f[jp] = f[jp] + Xup[j] * f[j]
 
         if l == 1:
             return Q[0]
