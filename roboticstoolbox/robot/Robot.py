@@ -1719,13 +1719,10 @@ class Robot(BaseRobot[Link], RobotKinematicsMixin):
 
         # allocate intermediate variables
         Xup = SE3.Alloc(n)
-        Xtree = SE3.Alloc(n)
 
         v = SpatialVelocity.Alloc(n)
         a = SpatialAcceleration.Alloc(n)
         f = SpatialForce.Alloc(n)
-        I = SpatialInertia.Alloc(n)  # noqa
-        s = []  # joint motion subspace
 
         # Handle trajectory case
         q = getmatrix(q, (None, None))
@@ -1738,41 +1735,53 @@ class Robot(BaseRobot[Link], RobotKinematicsMixin):
         else:
             Q = np.empty((l, n))  # joint torque/force
 
-        # TODO Should the dynamic parameters of static links preceding joint be
-        # somehow merged with the joint?
+        joint_links = [None] * n
+        parent_joint_index = [None] * n
+        joint_subspaces = [None] * n
 
-        # A temp variable to handle static joints
-        Ts = SE3()
+        for link in self.links:
+            if not link.isjoint:
+                continue
 
-        # A counter through joints
-        j = 0
+            j = link.jindex
+            if j is None:  # pragma nocover
+                continue
+
+            joint_links[j] = link
+            joint_subspaces[j] = None if link.v is None else link.v.s
+
+            parent = link.parent
+            while parent is not None and parent.jindex is None:
+                parent = parent.parent
+            parent_joint_index[j] = None if parent is None else parent.jindex
 
         for k in range(l):
             qk = q[k, :]
             qdk = qd[k, :]
             qddk = qdd[k, :]
 
-            # initialize intermediate variables
+            # initialize inertias by folding any fixed-link dynamics into the
+            # nearest upstream jointed link
+            I = SpatialInertia.Alloc(n)  # noqa
             for link in self.links:
-                if link.isjoint:
-                    I[j] = SpatialInertia(m=link.m, r=link.r)
-                    if symbolic and link.Ts is None:  # pragma: nocover
-                        Xtree[j] = SE3(np.eye(4, dtype="O"), check=False)
-                    elif link.Ts is not None:
-                        Xtree[j] = Ts * SE3(link.Ts, check=False)
+                owner = link
+                T_owner_link = SE3()
 
-                    if link.v is not None:
-                        s.append(link.v.s)
+                while owner is not None and owner.jindex is None:
+                    T_owner_link = SE3(owner.A()) * T_owner_link
+                    owner = owner.parent
 
-                    # Increment the joint counter
-                    j += 1
+                if owner is None or owner.jindex is None:
+                    continue
 
-                    # Reset the Ts tracker
-                    Ts = SE3()
-                else:  # pragma nocover
-                    # TODO Keep track of inertia and transform???
-                    if link.Ts is not None:
-                        Ts *= SE3(link.Ts, check=False)
+                j = owner.jindex
+                R_owner_link = T_owner_link.R
+                r_owner = link.r if link is owner else T_owner_link * link.r
+                I_owner = link.I if link is owner else R_owner_link @ link.I @ R_owner_link.T
+
+                I.data[j] = (
+                    I[j].A + SpatialInertia(m=link.m, r=r_owner, I=I_owner).A
+                )
 
             if gravity is None:
                 a_grav = -SpatialAcceleration(self.gravity)
@@ -1781,30 +1790,45 @@ class Robot(BaseRobot[Link], RobotKinematicsMixin):
 
             # forward recursion
             for j in range(0, n):
-                vJ = SpatialVelocity(s[j] * qdk[j])
+                link = joint_links[j]
+                s = joint_subspaces[j]
+
+                if link is None or s is None:  # pragma nocover
+                    raise ValueError(
+                        f"joint index {j} not found in robot {self.name}"
+                    )
+
+                vJ = SpatialVelocity(s * qdk[j])
 
                 # transform from parent(j) to j
-                Xup[j] = SE3(self.links[j].A(qk[j])).inv()
+                Xup[j] = SE3(link.A(qk[j])).inv()
 
-                if self.links[j].parent is None:
+                jp = parent_joint_index[j]
+
+                if jp is None:
                     v[j] = vJ
-                    a[j] = Xup[j] * a_grav + SpatialAcceleration(s[j] * qddk[j])
+                    a[j] = Xup[j] * a_grav + SpatialAcceleration(s * qddk[j])
                 else:
-                    jp = self.links[j].parent.jindex  # type: ignore
                     v[j] = Xup[j] * v[jp] + vJ
                     a[j] = (
-                        Xup[j] * a[jp] + SpatialAcceleration(s[j] * qddk[j]) + v[j] @ vJ
+                        Xup[j] * a[jp] + SpatialAcceleration(s * qddk[j]) + v[j] @ vJ
                     )
 
                 f[j] = I[j] * a[j] + v[j] @ (I[j] * v[j])
 
             # backward recursion
             for j in reversed(range(0, n)):
-                # next line could be dot(), but fails for symbolic arguments
-                Q[k, j] = sum(f[j].A * s[j])
+                s = joint_subspaces[j]
+                if s is None:  # pragma nocover
+                    raise ValueError(
+                        f"joint subspace {j} not found in robot {self.name}"
+                    )
 
-                if self.links[j].parent is not None:
-                    jp = self.links[j].parent.jindex  # type: ignore
+                # next line could be dot(), but fails for symbolic arguments
+                Q[k, j] = sum(f[j].A * s)
+
+                jp = parent_joint_index[j]
+                if jp is not None:
                     f[jp] = f[jp] + Xup[j] * f[j]
 
         if l == 1:
