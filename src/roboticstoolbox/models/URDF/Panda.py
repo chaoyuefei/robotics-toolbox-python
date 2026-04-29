@@ -55,7 +55,7 @@ class Panda(Robot):
         self.qr = np.array([0, -0.3, 0, -2.2, 0, 2.0, np.pi / 4])
         self.qz = np.zeros(7)
 
-        if load_dynamics:
+        if load_dynamics and self._has_missing_arm_dynamics():
             self._apply_arm_dynamics_from_dh()
 
         self.addconfiguration("qr", self.qr)
@@ -94,6 +94,14 @@ class Panda(Robot):
             urdf_link.m = dh_link.m
             urdf_link.r = dh_link.r
             urdf_link.I = dh_link.I
+
+    def _has_missing_arm_dynamics(self) -> bool:
+        arm_links = sorted(
+            (link for link in self.links if link.isjoint and link.jindex is not None),
+            key=lambda link: link.jindex,
+        )
+
+        return all(link.m == 0.0 and np.allclose(link.I, 0.0) for link in arm_links[:7])
 
 
 if __name__ == "__main__":  # pragma nocover
