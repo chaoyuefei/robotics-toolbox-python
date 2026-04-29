@@ -10,6 +10,11 @@
       </joint>
     </xacro:unless>
     <link name="${ns}_hand">
+      <inertial>
+        <origin xyz="-0.0000376 0.0119128 0.0207260" rpy="0 0 0"/>
+        <mass value="0.6544"/>
+        <inertia ixx="0.00186" ixy="0.00000" ixz="0.00000" iyy="0.00030" iyz="-0.00002" izz="0.00174"/>
+      </inertial>
       <visual>
         <geometry>
           <mesh filename="package://franka_description/meshes/visual/hand.dae"/>
@@ -53,6 +58,11 @@
       </collision>
     </link>
     <link name="${ns}_leftfinger">
+      <inertial>
+        <origin xyz="0 0.0152850 0.0219675" rpy="0 0 0"/>
+        <mass value="0.0291"/>
+        <inertia ixx="0.00000849" ixy="0.00000000" ixz="0.00000000" iyy="0.00000853" iyz="-0.00000106" izz="0.00000177"/>
+      </inertial>
       <visual>
         <geometry>
           <mesh filename="package://franka_description/meshes/visual/finger.dae"/>
@@ -60,6 +70,11 @@
       </visual>
     </link>
     <link name="${ns}_rightfinger">
+      <inertial>
+        <origin xyz="0 0.0152850 0.0219675" rpy="0 0 0"/>
+        <mass value="0.0291"/>
+        <inertia ixx="0.00000849" ixy="0.00000000" ixz="0.00000000" iyy="0.00000853" iyz="-0.00000106" izz="0.00000177"/>
+      </inertial>
       <visual>
         <origin xyz="0 0 0" rpy="0 0 ${pi}"/>
         <geometry>
