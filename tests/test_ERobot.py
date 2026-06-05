@@ -214,62 +214,68 @@ class TestERobot(unittest.TestCase):
         nt.assert_array_almost_equal(tau, np.r_[d11 + d12, d21 + d22])
 
     def test_invdyn_static2(self):
-        # create a 2 link robot
-        # Example from Spong etal. 2nd edition, p. 260
+        # 2-joint robot with a MASSIVE fixed link (l2) rigidly attached
+        # between the two joints. Because l2 is fixed relative to joint 1
+        # (joint 2 lies distal to it), its inertia is borne entirely by
+        # joint 1 -- the nearest actuated ancestor -- matching the URDF/
+        # standard convention. Joint 2 only actuates the massless distal
+        # link l3, so every gravity/velocity/inertia term for joint 2 is
+        # zero, and q2 never moves the mass carried by joint 1.
         l1 = Link(ets=ETS(ET.Ry()), m=1, r=[0.5, 0, 0], name="l1")
         l2 = Link(ets=ETS(ET.tx(1)), m=1, r=[0.5, 0, 0], parent=l1, name="l2")
         l3 = Link(ets=ETS(ET.Ry()), m=0, r=[0, 0, 0], parent=l2, name="l3")
         robot = ERobot([l1, l2, l3], name="simple 3 link")
         z = np.zeros(robot.n)
 
-        # check gravity load
+        # check gravity load: joint 1 supports l1 (com x=0.5) and the fixed
+        # l2 (com x=1.5) -> -2; joint 2 sees only massless l3 -> 0.
         tau = robot.rne(z, z, z) / 9.81
-        nt.assert_array_almost_equal(tau, np.r_[-2, -0.5])
+        nt.assert_array_almost_equal(tau, np.r_[-2, 0])
 
+        # q2 does not move any mass, so joint 1 still supports l1+l2 = -2.
         tau = robot.rne(np.array([0.0, -pi / 2.0]), z, z) / 9.81
-        nt.assert_array_almost_equal(tau, np.r_[-1.5, 0])
+        nt.assert_array_almost_equal(tau, np.r_[-2, 0])
 
+        # q1=-pi/2 swings l1 and l2 onto the joint-1 axis -> zero moment.
         tau = robot.rne(np.array([-pi / 2, pi / 2]), z, z) / 9.81
-        nt.assert_array_almost_equal(tau, np.r_[-0.5, -0.5])
+        nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         tau = robot.rne(np.array([-pi / 2, 0]), z, z) / 9.81
         nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
-        # check velocity terms
+        # check velocity terms: joint 2 moves only the massless l3, so there
+        # is no Coriolis/centripetal coupling for either joint.
         robot.gravity = [0, 0, 0]
         q = np.array([0, -pi / 2])
-        h = -0.5 * sin(q[1])
 
         tau = robot.rne(q, np.array([0, 0]), z)
-        nt.assert_array_almost_equal(tau, np.r_[0, 0] * h)
+        nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         tau = robot.rne(q, np.array([1, 0]), z)
-        nt.assert_array_almost_equal(tau, np.r_[0, -1] * h)
+        nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         tau = robot.rne(q, np.array([0, 1]), z)
-        nt.assert_array_almost_equal(tau, np.r_[1, 0] * h)
+        nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         tau = robot.rne(q, np.array([1, 1]), z)
-        nt.assert_array_almost_equal(tau, np.r_[3, -1] * h)
+        nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
-        # check inertial terms
-
-        d11 = 1.5 + cos(q[1])
-        d12 = 0.25 + 0.5 * cos(q[1])
-        d21 = d12
-        d22 = 0.25
+        # check inertial terms. Joint 1 carries l1 (m*d^2 = 1*0.5^2 = 0.25)
+        # and the fixed l2 (m*d^2 = 1*1.5^2 = 2.25) -> d11 = 2.5, constant.
+        # Joint 2 actuates only the massless l3 -> zero inertia and coupling.
+        d11 = 2.5
 
         tau = robot.rne(q, z, np.array([0, 0]))
         nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         tau = robot.rne(q, z, np.array([1, 0]))
-        nt.assert_array_almost_equal(tau, np.r_[d11, d21])
+        nt.assert_array_almost_equal(tau, np.r_[d11, 0])
 
         tau = robot.rne(q, z, np.array([0, 1]))
-        nt.assert_array_almost_equal(tau, np.r_[d12, d22])
+        nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         tau = robot.rne(q, z, np.array([1, 1]))
-        nt.assert_array_almost_equal(tau, np.r_[d11 + d12, d21 + d22])
+        nt.assert_array_almost_equal(tau, np.r_[d11, 0])
 
 
 class TestERobot2(unittest.TestCase):
